@@ -1,25 +1,49 @@
 use advtools::input;
-use advtools::prelude::HashMap;
-use advtools::grid::{Dir, Grid};
+use advtools::prelude::{HashMap, HashSet, Itertools};
 
 fn main() {
-    let mut grid = Grid::new(input::lines().map(|line| line.chars().map(|c| c == '#').collect()));
-    grid.enlarge(60, false);
+    let mut elves = HashSet::new();
 
-    let mut dirs = [Dir::U, Dir::D, Dir::L, Dir::R];
+    for (y, line) in input::lines().enumerate() {
+        for (x, c) in line.chars().enumerate() {
+            if c == '#' {
+                elves.insert((x as i32, y as i32));
+            }
+        }
+    }
+
+    let all_dirs = [
+        (-1, -1), (0, -1), (1, -1),
+        (-1,  0),          (1,  0),
+        (-1,  1), (0,  1), (1,  1),
+    ];
+
+    let mut look_dirs = [
+        (1, 0, 2),
+        (6, 5, 7),
+        (3, 0, 5),
+        (4, 2, 7),
+    ];
+
+    let mut neighbors = [false; 8];
+
 
     for round in 1.. {
         let mut targets = HashMap::new();
+        let has_elf = |(ex, ey), (dx, dy)| elves.contains(&(ex + dx, ey + dy));
 
         // Step 1: select new targets.
-        for pos in grid.positions::<usize>().filter(|&p| grid[p]) {
+        for &elf in &elves {
+            let neighbors = all_dirs.iter().enumerate().for_each(|(i, &d)| has_elf(elf, d)).collect_vec();
             // Not moving if no neighbors at all.
-            if grid.neighbors_diag(pos).all(|p| !grid[p]) { continue; }
+            if !neighbors.iter().any(|n| *n) {
+                continue;
+            }
             // Try to find a free direction.
-            for &main in &dirs {
-                let pos1 = pos.to(main);
-                if !(grid[pos1] || grid[pos1.to(main.left())] || grid[pos1.to(main.right())]) {
-                    targets.entry(pos1).or_insert(vec![]).push(pos);
+            for &(main, side1, side2) in &look_dirs {
+                if !(neighbors[main] || neighbors[side1] || neighbors[side2]) {
+                    targets.entry((elf.0 + all_dirs[main].0,
+                                   elf.1 + all_dirs[main].1)).or_insert(vec![]).push(elf);
                     break;
                 }
             }
@@ -28,10 +52,10 @@ fn main() {
         let mut moved = false;
 
         // Step 2: execute moves.
-        for (target, elves) in targets {
-            if let [pos] = elves[..] {
-                grid[pos] = false;
-                grid[target] = true;
+        for (target, want_elves) in targets {
+            if let [pos] = want_elves[..] {
+                elves.remove(&pos);
+                elves.insert(target);
                 moved = true;
             }
         }
@@ -39,16 +63,14 @@ fn main() {
         // Part 1: count the empty places in the elves' bounding rectangle.
         if round == 10 {
             let mut max_x = 0; let mut max_y = 0;
-            let mut min_x = grid.width(); let mut min_y = grid.height();
-            for pos in grid.positions::<usize>().filter(|&p| grid[p]) {
-                max_x = max_x.max(pos.x);
-                max_y = max_y.max(pos.y);
-                min_x = min_x.min(pos.x);
-                min_y = min_y.min(pos.y);
+            let mut min_x = 999; let mut min_y = 999;
+            for &(ex, ey) in &elves {
+                max_x = max_x.max(ex);
+                max_y = max_y.max(ey);
+                min_x = min_x.min(ex);
+                min_y = min_y.min(ey);
             }
-            let free = grid.positions::<usize>()
-                .filter(|&p| !grid[p] && p.x >= min_x && p.x <= max_x && p.y >= min_y && p.y <= max_y)
-                .count();
+            let free = (max_x - min_x + 1) * (max_y - min_y + 1) - elves.len() as i32;
             advtools::verify("Free spaces after 10", free, 4172);
         }
 
@@ -58,6 +80,6 @@ fn main() {
             return;
         }
 
-        dirs.rotate_left(1);
+        look_dirs.rotate_left(1);
     }
 }
